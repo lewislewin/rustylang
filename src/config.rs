@@ -34,7 +34,7 @@ impl Default for Config {
             source_locale: "en-GB".to_string(),
             file_pattern: "{locale}.json".to_string(),
             locales: vec![],
-            concurrency: 5,
+            concurrency: 50,
             openai: OpenAi::default(),
             translate: Translate::default(),
         }
@@ -43,7 +43,7 @@ impl Default for Config {
 
 impl Default for OpenAi {
     fn default() -> Self {
-        Self { model: "gpt-4o-mini".to_string(), api_key: None }
+        Self { model: "gpt-5-nano-2025-08-07".to_string(), api_key: None }
     }
 }
 

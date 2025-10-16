@@ -4,3 +4,5 @@ en-GB.json
 en-GB.bak
 rustylang.toml
 fr-FR.json
+*.json
+*.bak

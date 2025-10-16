@@ -7,7 +7,6 @@ use clap::{Args, Parser, Subcommand};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use futures::{stream, StreamExt};
 use serde_json::Value;
-// use std::collections::HashMap; // no longer used with stream pipeline
 use std::env;
 use std::sync::Arc;
 use std::path::PathBuf;
@@ -72,7 +71,8 @@ pub async fn handle_set(args: SetArgs) -> Result<()> {
     let mut json = read_json_file(&file).with_context(|| format!("Reading {:?}", file))?;
 
     // Update
-    set_value_at_path(&mut json, &args.path, Value::String(args.text.clone()), args.create_missing)
+    // Create intermediate objects by default for better UX
+    set_value_at_path(&mut json, &args.path, Value::String(args.text.clone()), true)
         .with_context(|| format!("Setting {} in {:?}", args.path, file))?;
 
     // Write atomically
