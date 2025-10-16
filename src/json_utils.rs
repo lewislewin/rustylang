@@ -135,4 +135,24 @@ fn ensure_array(v: &mut Value, min_index: usize, create_missing: bool) -> Result
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_nonexistent_returns_empty_object() {
+        let tmp = Path::new("/tmp/does-not-exist-12345.json");
+        let val = read_json_file(tmp).unwrap();
+        assert!(val.as_object().is_some());
+        assert!(val.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_dot_path_supports_escaped_dots() {
+        let segs = parse_dot_path("labels.some\\.key").unwrap();
+        assert!(matches!(&segs[0], PathSegment::Key(k) if k == "labels"));
+        assert!(matches!(&segs[1], PathSegment::Key(k) if k == "some.key"));
+    }
+}
+
 

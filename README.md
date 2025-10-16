@@ -1,5 +1,7 @@
 ## rustylang
 
+![CI](https://github.com/your-org/rustylang/actions/workflows/ci.yml/badge.svg)
+
 Small, fast Rust CLI to manage i18n locale files and auto-translate missing strings with OpenAI.
 
 ### What it does
@@ -10,6 +12,11 @@ Small, fast Rust CLI to manage i18n locale files and auto-translate missing stri
 ### Requirements
 - Rust (stable)
 - OpenAI API key in `OPENAI_API_KEY` (or a `.env` file in the project root)
+
+### Install
+```bash
+cargo install --path .
+```
 
 ### Build
 ```bash
@@ -65,6 +72,11 @@ rustylang translate --concurrency 8 --model gpt-4o-mini
 - `.` separates object keys; escape literal dots with `\.` (e.g. `labels.some\.`key`).
 - Arrays via `[idx]`, e.g. `items[0].name`.
 - Only string leaves are translated; non-string values are ignored.
+
+### Troubleshooting
+- Set `RUST_LOG=info` for more verbose logs (uses `tracing_subscriber`).
+- Proxy/corporate networks: `reqwest` uses Rustls; ensure outbound TLS is allowed.
+- API timeouts default to 30s. Increase concurrency via `--concurrency` carefully.
 
 ### Notes
 - The CLI reads `{locale}.json` files from the current directory.

@@ -1,0 +1,13 @@
+source_locale = "en-GB"
+file_pattern = "{locale}.json"
+locales = ["fr-FR", "de-DE"]
+concurrency = 8
+
+[openai]
+model = "gpt-4o-mini"
+
+[translate]
+overwrite_existing = false
+preserve_placeholders = true
+
+

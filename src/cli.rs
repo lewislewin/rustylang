@@ -37,9 +37,9 @@ pub struct SetArgs {
     /// File to edit (defaults to source locale from config, usually en-GB.json)
     #[arg(long)]
     pub file: Option<PathBuf>,
-    /// Create intermediate objects if they don't exist
+    /// Disable creating intermediate objects/arrays automatically
     #[arg(long)]
-    pub create_missing: bool,
+    pub no_create_missing: bool,
 }
 
 #[derive(Args, Debug)]
@@ -72,7 +72,8 @@ pub async fn handle_set(args: SetArgs) -> Result<()> {
 
     // Update
     // Create intermediate objects by default for better UX
-    set_value_at_path(&mut json, &args.path, Value::String(args.text.clone()), true)
+    let create_missing = !args.no_create_missing;
+    set_value_at_path(&mut json, &args.path, Value::String(args.text.clone()), create_missing)
         .with_context(|| format!("Setting {} in {:?}", args.path, file))?;
 
     // Write atomically
@@ -156,7 +157,7 @@ pub async fn handle_translate(args: TranslateArgs) -> Result<()> {
                                 return Ok::<(String, String), anyhow::Error>((path, String::from("<translated>")));
                             }
                             let placeholders = extract_placeholders(&english);
-                            match translator.translate(&english, &source_locale, &locale, &placeholders).await {
+                            match translator.translate(Some(&path), &english, &source_locale, &locale, &placeholders).await {
                                 Ok(tx) => Ok((path, tx)),
                                 Err(err) => {
                                     error!(?err, path=%path, "Translation failed, using source text");
@@ -187,6 +188,35 @@ pub async fn handle_translate(args: TranslateArgs) -> Result<()> {
         .await;
 
     for res in results { res?; }
+
+    // Token usage summary
+    let usage = translator.usage_snapshot();
+    info!(
+        prompt_tokens=%usage.prompt_tokens,
+        completion_tokens=%usage.completion_tokens,
+        total_tokens=%usage.total_tokens,
+        requests=%usage.requests,
+        "OpenAI usage summary"
+    );
+
+    // Human-readable stdout summary
+    println!(
+        "\nUsage summary: total={} (prompt={}, completion={}), requests={}",
+        usage.total_tokens, usage.prompt_tokens, usage.completion_tokens, usage.requests
+    );
+
+    // Per-locale breakdown
+    let mut per = translator.usage_by_locale_snapshot();
+    per.sort_by(|a, b| a.0.cmp(&b.0));
+    if !per.is_empty() {
+        println!("Per-locale usage:");
+        for (loc, u) in per {
+            println!(
+                "  {}: total={}, prompt={}, completion={}, requests={}",
+                loc, u.total_tokens, u.prompt_tokens, u.completion_tokens, u.requests
+            );
+        }
+    }
 
     Ok(())
 }

@@ -43,5 +43,29 @@ pub fn compute_missing_translations(source: &Value, target: &Value, overwrite: b
     out
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_only_when_not_overwrite() {
+        let source: Value = serde_json::json!({"a": {"b": "hello"}});
+        let target: Value = serde_json::json!({"a": {"b": ""}});
+        let v = compute_missing_translations(&source, &target, false);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].0, "a.b");
+    }
+
+    #[test]
+    fn all_when_overwrite() {
+        let source: Value = serde_json::json!({"a": {"b": "hello"}});
+        let target: Value = serde_json::json!({"a": {"b": "world"}});
+        let v = compute_missing_translations(&source, &target, true);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].0, "a.b");
+        assert_eq!(v[0].1, "hello");
+    }
+}
+
 
 

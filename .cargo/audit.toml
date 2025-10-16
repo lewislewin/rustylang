@@ -1,0 +1,7 @@
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+unsound = "deny"
+ignore = []
+
+
