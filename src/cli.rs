@@ -5,9 +5,11 @@ use crate::openai_client::OpenAiTranslator;
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use futures::{stream, StreamExt};
 use serde_json::Value;
-use std::collections::HashMap;
+// use std::collections::HashMap; // no longer used with stream pipeline
 use std::env;
+use std::sync::Arc;
 use std::path::PathBuf;
 use tracing::{error, info};
 use regex::Regex;
@@ -116,53 +118,75 @@ pub async fn handle_translate(args: TranslateArgs) -> Result<()> {
         .unwrap()
         .progress_chars("##-");
 
-    for locale in locales {
-        if locale == cfg.source_locale {
-            continue;
-        }
-        let target_file = PathBuf::from(cfg.file_pattern.replace("{locale}", &locale));
-        let mut target = read_json_file(&target_file).unwrap_or(Value::Object(serde_json::Map::new()));
-        let to_fill = compute_missing_translations(&source, &target, args.overwrite);
-        if to_fill.is_empty() {
-            info!(locale=%locale, "No translations needed");
-            continue;
-        }
-
-        let pb = mp.add(ProgressBar::new(to_fill.len() as u64));
-        pb.set_style(pb_style.clone());
-        pb.set_message(format!("{}", locale));
-
-        let mut updates: HashMap<String, String> = HashMap::new();
-        for (path, english) in to_fill {
-            if args.dry_run {
-                updates.insert(path.clone(), String::from("<translated>"));
-                pb.inc(1);
-                continue;
-            }
-            let placeholders = extract_placeholders(&english);
-            match translator.translate(&english, &cfg.source_locale, &locale, &placeholders).await {
-                Ok(tx) => { updates.insert(path.clone(), tx); }
-                Err(err) => {
-                    error!(?err, path=%path, "Translation failed, using source text");
-                    updates.insert(path.clone(), english.clone());
+    // Process locales concurrently (bounded by cfg.concurrency)
+    let mp = Arc::new(mp);
+    let translator = translator.clone();
+    let file_pattern = cfg.file_pattern.clone();
+    let source_locale = cfg.source_locale.clone();
+    let concurrency = cfg.concurrency;
+    let results = stream::iter(locales.into_iter())
+        .map(|locale| {
+            let translator = translator.clone();
+            let mp = mp.clone();
+            let pb_style = pb_style.clone();
+            let source = source.clone();
+            let file_pattern = file_pattern.clone();
+            let source_locale = source_locale.clone();
+            async move {
+                if locale == source_locale { return Ok::<(), anyhow::Error>(()); }
+                let target_file = PathBuf::from(file_pattern.replace("{locale}", &locale));
+                let mut target = read_json_file(&target_file).unwrap_or(Value::Object(serde_json::Map::new()));
+                let to_fill = compute_missing_translations(&source, &target, args.overwrite);
+                if to_fill.is_empty() {
+                    info!(locale=%locale, "No translations needed");
+                    return Ok(());
                 }
+
+                let pb = mp.add(ProgressBar::new(to_fill.len() as u64));
+                pb.set_style(pb_style.clone());
+                pb.set_message(format!("{}", locale));
+
+                let updates = stream::iter(to_fill.into_iter())
+                    .map(|(path, english)| {
+                        let translator = translator.clone();
+                        let source_locale = source_locale.clone();
+                        let locale = locale.clone();
+                        async move {
+                            if args.dry_run {
+                                return Ok::<(String, String), anyhow::Error>((path, String::from("<translated>")));
+                            }
+                            let placeholders = extract_placeholders(&english);
+                            match translator.translate(&english, &source_locale, &locale, &placeholders).await {
+                                Ok(tx) => Ok((path, tx)),
+                                Err(err) => {
+                                    error!(?err, path=%path, "Translation failed, using source text");
+                                    Ok((path, english))
+                                }
+                            }
+                        }
+                    })
+                    .buffer_unordered(concurrency)
+                    .inspect(|_| pb.inc(1))
+                    .collect::<Vec<_>>()
+                    .await;
+
+                pb.finish_and_clear();
+                if args.dry_run { info!(locale=%locale, count=%updates.len(), "Dry run: would update keys"); return Ok(()); }
+
+                for item in updates.into_iter() {
+                    let (path, txt) = item?;
+                    set_value_at_path(&mut target, &path, Value::String(txt), true)?;
+                }
+                write_json_atomic(&target_file, &target)?;
+                info!(locale=%locale, file=?target_file, "Wrote translations");
+                Ok(())
             }
-            pb.inc(1);
-        }
-        pb.finish_and_clear();
+        })
+        .buffer_unordered(concurrency)
+        .collect::<Vec<_>>()
+        .await;
 
-        // Apply updates
-        if args.dry_run {
-            info!(locale=%locale, count=%updates.len(), "Dry run: would update keys");
-            continue;
-        }
-
-        for (path, txt) in updates {
-            set_value_at_path(&mut target, &path, Value::String(txt), true)?;
-        }
-        write_json_atomic(&target_file, &target)?;
-        info!(locale=%locale, file=?target_file, "Wrote translations");
-    }
+    for res in results { res?; }
 
     Ok(())
 }

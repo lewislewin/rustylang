@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
+#[derive(Clone)]
 pub struct OpenAiTranslator {
     client: Client,
     api_key: String,
